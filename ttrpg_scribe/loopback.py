@@ -1,0 +1,241 @@
+"""Loopback capture (no Discord setup needed) → VAD utterances.
+
+Captures a speaker/output device via WASAPI loopback plus your mic, mixes
+them, and splits speech into 0.5–10 s utterances with WebRTC VAD.
+Only PCM in RAM — transcribed, labeled SPEAKER_XX, then freed.
+
+GoXLR: pass --device "Stream Mix" to capture the Stream Mix output instead of
+the default speaker. Use --list-devices to see exact device names; matching is
+a case-insensitive substring.
+
+Typical delay: utterance length + ~1–2 s GPU decode.
+"""
+from __future__ import annotations
+
+import threading
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
+
+from ttrpg_scribe.transcribe import _prompt_worthy
+
+if TYPE_CHECKING:
+    from ttrpg_scribe.diarizer import SpeakerCluster
+    from ttrpg_scribe.transcribe import StreamingTranscriber
+    from ttrpg_scribe.writer import NotesWriter
+
+SAMPLE_RATE = 16000
+FRAME_MS = 30
+FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000  # 480
+
+
+class VadChunker:
+    """Greedy VAD segmenter: emits utterances on ~0.8 s trailing silence,
+    force-splitting continuous speech at ~10 s so live captions stay fresh.
+
+    Backstop: even audio the VAD never flags as speech is emitted at the
+    ~10 s cap when it is clearly not silence (energy gate) — Whisper's own
+    VAD decides whether it is transcribable. Without this, distorted or
+    noisy-but-loud speech vanishes without a trace.
+    """
+
+    vad: Any  # webrtcvad ships no types
+    max_samples: int
+    min_energy: float
+    _buf: bytearray
+    _speech: bytearray
+    _window: bytearray  # every fed sample since last emission (any voicing)
+    _in_speech: bool
+    _silence_frames: int
+
+    def __init__(self, aggressiveness: int = 1, max_seconds: float = 10.0,
+                 min_energy: float = 0.008) -> None:
+        import webrtcvad
+
+        self.vad = webrtcvad.Vad(aggressiveness)
+        self.max_samples = int(max_seconds * SAMPLE_RATE)
+        self.min_energy = min_energy
+        self._buf = bytearray()
+        self._speech = bytearray()
+        self._window = bytearray()
+        self._in_speech = False
+        self._silence_frames = 0
+
+    def _clear(self) -> None:
+        self._buf = bytearray()
+        self._speech = bytearray()
+        self._window = bytearray()
+        self._in_speech = False
+        self._silence_frames = 0
+
+    @staticmethod
+    def _rms(audio: np.ndarray) -> float:
+        return float(np.sqrt(np.mean(audio * audio))) if audio.size else 0.0
+
+    def feed(self, pcm16_mono: bytes) -> list[np.ndarray]:
+        out: list[np.ndarray] = []
+        self._buf += pcm16_mono
+        self._window += pcm16_mono
+        frame_bytes = FRAME_SAMPLES * 2
+        while len(self._buf) >= frame_bytes:
+            frame = bytes(self._buf[:frame_bytes])
+            del self._buf[:frame_bytes]
+            voiced = self.vad.is_speech(frame, SAMPLE_RATE)
+            if voiced:
+                self._speech += frame
+                self._in_speech = True
+                self._silence_frames = 0
+                if len(self._speech) // 2 >= self.max_samples:  # force-split long monologues
+                    out.append(self._to_float(self._speech))
+                    self._clear()
+            elif self._in_speech:
+                self._speech += frame
+                self._silence_frames += 1
+                if self._silence_frames * FRAME_MS >= 800:
+                    audio = self._to_float(self._speech)
+                    if audio.size >= SAMPLE_RATE // 2:  # keep >= 0.5 s
+                        out.append(audio)
+                    self._clear()
+        if len(self._window) // 2 >= self.max_samples:
+            # Backstop: ~10 s of audio with no VAD emission. Emit it whole if
+            # it is clearly not silence; Whisper filters the rest.
+            audio = self._to_float(self._window)
+            if audio.size >= SAMPLE_RATE // 2 and self._rms(audio) >= self.min_energy:
+                out.append(audio)
+            self._clear()
+        return out
+
+    @staticmethod
+    def _to_float(raw: bytearray) -> np.ndarray:
+        return np.frombuffer(bytes(raw), dtype=np.int16).astype(np.float32) / 32768.0
+
+    def flush(self, min_seconds: float = 0.25) -> np.ndarray | None:
+        """Emit buffered in-progress speech (trailing words with no trailing
+        silence yet, e.g. at shutdown). Falls back to the whole recent
+        window when it is clearly not silence. Resets the segmenter."""
+        voiced = self._to_float(bytearray(bytes(self._buf) + bytes(self._speech)))
+        window = self._to_float(self._window)
+        self._clear()
+        if voiced.size >= int(min_seconds * SAMPLE_RATE):
+            return voiced
+        if window.size >= SAMPLE_RATE // 2 and self._rms(window) >= self.min_energy:
+            return window
+        return None
+
+
+def _match(devices: Iterable[Any], wanted: str, kind: str) -> Any:
+    for d in devices:
+        if wanted.lower() in d.name.lower():
+            return d
+    names = "\n".join(f"  {d.name}" for d in devices)
+    raise SystemExit(f"No {kind} device matching {wanted!r}.\nAvailable:\n{names}")
+
+
+def list_devices() -> None:
+    import soundcard as sc
+
+    print("--- speakers/outputs (loopback sources) ---")
+    for s in sc.all_speakers():
+        print(f"  {s.name}")
+    print("--- microphones ---")
+    for m in sc.all_microphones(include_loopback=False):
+        print(f"  {m.name}")
+
+
+def _emit_utterance(
+    writer: NotesWriter,
+    cluster: SpeakerCluster,
+    transcriber: StreamingTranscriber,
+    speaker_fn: Callable[[float], str | None] | None,
+    utterance: np.ndarray,
+    prompt: str | None,
+) -> str:
+    """Attribute (Discord name or diarized label), transcribe, write to
+    console + file. Returns the transcribed text (for prompt chaining)."""
+    label: str | None = None
+    if speaker_fn is not None:
+        try:
+            label = speaker_fn(float(utterance.size) / SAMPLE_RATE)
+        except Exception:
+            label = None
+    if label is None:
+        label = cluster.identify(utterance)
+    text = transcriber.transcribe(utterance, prompt=prompt)
+    writer.write(label, text)
+    return text
+
+
+def run_loopback(
+    writer: NotesWriter,
+    transcriber: StreamingTranscriber,
+    cluster: SpeakerCluster,
+    device: str | None = None,
+    mic: str | None = None,
+    input_dev: str | None = None,
+    speaker_fn: Callable[[float], str | None] | None = None,
+    stop: threading.Event | None = None,
+) -> None:
+    """Blocking capture loop. Ctrl+C (or ``stop``) ends it.
+
+    ``speaker_fn`` maps an utterance duration to a Discord display name
+    (hybrid mode); without it every line gets a diarized SPEAKER_XX label.
+    """
+    import warnings
+
+    import soundcard as sc
+
+    # Buffer-overrun notices when GPU inference blocks between 1 s reads.
+    # The audio itself transcribes fine; silence the spam.
+    warnings.filterwarnings("ignore", message="data discontinuity in recording")
+
+    chunker = VadChunker()
+    last_text = ""
+    prompt = lambda: (last_text[-224:] or None)
+    if input_dev:
+        # Direct input capture (e.g. GoXLR "Broadcast Stream Mix", which already
+        # contains the full mix). No loopback, no mic mixing — no doubles.
+        source = _match(sc.all_microphones(include_loopback=True), input_dev, "input")
+        print(f"[cap] direct input from '{source.name}'", flush=True)
+        with source.recorder(samplerate=SAMPLE_RATE, channels=1) as rec:
+            print("[cap] listening… Ctrl+C to stop", flush=True)
+            try:
+                while stop is None or not stop.is_set():
+                    frames = rec.record(numframes=SAMPLE_RATE)
+                    pcm16 = (np.clip(frames[:, 0], -1.0, 1.0) * 32767).astype(np.int16).tobytes()
+                    for utterance in chunker.feed(pcm16):
+                        text = _emit_utterance(writer, cluster, transcriber, speaker_fn,
+                                               utterance, prompt())
+                        if text and _prompt_worthy(text):
+                            last_text = text
+            finally:
+                tail = chunker.flush()  # don't drop trailing words on stop
+                if tail is not None:
+                    _emit_utterance(writer, cluster, transcriber, speaker_fn,
+                                    tail, prompt())
+        return
+    speaker = _match(sc.all_speakers(), device, "speaker/output") if device else sc.default_speaker()
+    microphone = _match(sc.all_microphones(include_loopback=False), mic, "microphone") if mic else sc.default_microphone()
+    print(f"[cap] loopback from '{speaker.name}' + mic '{microphone.name}'", flush=True)
+    chunker = VadChunker()
+    # 1 s blocking reads; soundcard returns float64 in [-1, 1]
+    with speaker.recorder(samplerate=SAMPLE_RATE, channels=1, include_loopback=True) as spk, microphone.recorder(
+        samplerate=SAMPLE_RATE, channels=1
+    ) as m:
+        print("[cap] listening… Ctrl+C to stop", flush=True)
+        try:
+            while stop is None or not stop.is_set():
+                heard = spk.record(numframes=SAMPLE_RATE)
+                said = m.record(numframes=SAMPLE_RATE)
+                mixed = np.clip(heard[:, 0] + said[:, 0], -1.0, 1.0)
+                pcm16 = (mixed * 32767).astype(np.int16).tobytes()
+                for utterance in chunker.feed(pcm16):
+                    text = _emit_utterance(writer, cluster, transcriber, speaker_fn,
+                                           utterance, prompt())
+                    if text and _prompt_worthy(text):
+                        last_text = text
+        finally:
+            tail = chunker.flush()  # don't drop trailing words on stop
+            if tail is not None:
+                _emit_utterance(writer, cluster, transcriber, speaker_fn,
+                                tail, prompt())
