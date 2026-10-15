@@ -126,6 +126,10 @@ cargo build --release
 ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
 ```
 
+Adding a capture bot for another voice app? The producer contract
+(process framing, audio format, names, lifecycle) is specified in
+[SIDECAR_API.md](SIDECAR_API.md) — implement the pipe, keep the worker.
+
 ## Troubleshooting
 
 - Wrong mode (bot never joins, only `[cap] direct input…` lines): you ran in
