@@ -1,0 +1,159 @@
+# Discord TTRPG Scribe
+
+Live transcription of Discord calls for TTRPG session notes. Runs 100% locally
+on your RTX 5070 Ti — free, no cloud, and **no audio is ever saved to disk**
+(buffers live in RAM, get transcribed, then are freed).
+
+```powershell
+ttrpg-scribe "C:\Notes\CurseOfStrahd"
+```
+
+That creates `C:\Notes\CurseOfStrahd\2026-10-15.txt` (ISO 8601) and prints every
+line to the console too — live feedback + long-term notes. A second session in
+one day appends under a `## Session started …` header; nothing is overwritten.
+
+English-only: the recognizer is locked to English (faster + more accurate than
+auto-detect when the language is known).
+
+## Modes
+
+| Mode | Audio | Speaker labels | Setup |
+|---|---|---|---|
+| `sidecar` (default) | Rust songbird receive | Real Discord display names | Build `bot-rust` once (+ folder mapped for auto-join) |
+| `loopback` | Local capture (Stream Mix) | `SPEAKER_00`, `SPEAKER_01`, … | None |
+| `hybrid` | Local capture + presence names | Real Discord display names | Folder mapped |
+| `bot` | Bot's Discord receive | Real Discord display names | Invite the bot once (below) — currently degraded upstream (see below) |
+
+```powershell
+# Mapped folder: sidecar — clean remote audio + Discord names, no flags needed
+ttrpg-scribe "C:\Notes\CurseOfStrahd"
+
+# Just local audio with diarized labels (no Discord needed at all)
+ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode loopback
+
+# Legacy bot-record mode (per-user Discord streams; degraded by DAVE, see below)
+ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode bot --channel "Game Night"
+
+# One-off override: capture something else this time only
+ttrpg-scribe "C:\Notes\CurseOfStrahd" --input "Chat"
+
+# See exact device names (--input/--device/--mic match case-insensitive substrings)
+ttrpg-scribe --list-devices
+```
+
+## Defaults are configurable
+
+Built-in default: Stream Mix capture, sidecar mode. Everything — defaults,
+bot token, folder mappings — lives in one file, `%USERPROFILE%\.ttrpg-scribe.json`
+(see `config.example.json`):
+
+```powershell
+ttrpg-scribe --show-config                  # see current defaults
+ttrpg-scribe --set-default input "Chat"      # change the default capture
+ttrpg-scribe --set-default mode bot          # default to bot mode
+ttrpg-scribe --set-default input ""          # clear back to speaker+mic loopback
+```
+
+CLI flags always override the file for one run. If the configured source isn't
+found (device unplugged/renamed), you get a numbered list and pick one on the
+spot — with an offer to save it as the new default — instead of an error.
+
+## Folder → guild/channel mapping (bot mode)
+
+Skip `--guild`/`--channel` every run by pinning them to the folder. Several
+folders may share one target. A mapped folder auto-selects bot mode —
+no `--mode` flag needed (pass `--mode loopback` to override for one run):
+
+```powershell
+ttrpg-scribe --map "C:\Notes\CurseOfStrahd" --guild "My Server" --channel "Game Night"
+ttrpg-scribe --map "C:\Notes\OneShot" --guild "My Server" --channel "Game Night"
+ttrpg-scribe "C:\Notes\CurseOfStrahd"   # joins from the mapping
+ttrpg-scribe --maps                                 # list them
+ttrpg-scribe --unmap "C:\Notes\OneShot"             # forget one
+```
+
+Precedence: `--mode`/`--guild`/`--channel` flags > folder mapping (implies sidecar) > config defaults.
+
+`--set-default mode sidecar` works too, so a bare folder on any machine
+defaults to the sidecar without a mapping.
+
+Use `hybrid` for the best of both (your case for every mapped campaign):
+clean local audio plus true per-player names, correlated by timing. The bot
+joins voice presence-only — it hears nothing, records nothing, and DAVE
+breaks nothing; it only reports who is speaking when. Use `bot` (record)
+only when there is no local capture. Use `loopback`/`--device` when you
+play on someone else's server. Delay is a few seconds either way.
+
+## Bot setup (one time, ~10 min)
+
+1. <https://discord.com/developers> → New Application → Bot → Reset Token → copy it.
+2. OAuth2 → URL Generator → scopes `bot` + `applications.commands` →
+   permissions `View Channels`, `Connect`, `Speak` → open the URL, invite it.
+   (Invite once; permission changes later need a re-invite, intent changes
+   below do not — just restart the scribe.)
+3. Bot → Privileged Gateway Intents → enable **Server Members Intent** →
+   Save. This is what gives transcripts server nicknames instead of
+   `User 123…`. (Small private servers need no verification for this.)
+   If you skip it, the scribe refuses to start and tells you exactly this.
+4. Opus voice library: already installed (`opus.dll` in the project folder,
+   wired up via `"opus_dll_path"`). Skip this step unless the bot complains
+   about Opus at startup.
+5. Save the token as `"discord_token"` in `%USERPROFILE%\.ttrpg-scribe.json`
+   (see `config.example.json`) — easiest with:
+   `code $env:USERPROFILE\.ttrpg-scribe.json`
+   and optionally the usual table so flags aren't needed:
+   `ttrpg-scribe --set-default guild "My Server"` and
+   `ttrpg-scribe --set-default channel "Game Night"` (one run per key).
+6. Pin the folder once:
+   `ttrpg-scribe --map "C:\Notes\MyCampaign" --guild "My Server" --channel "Game Night"`.
+   Mapped folders auto-join (hybrid mode) — no flags needed afterwards.
+7. Just run it — the bot joins the channel itself and starts recording.
+   Nothing to type in Discord. Ctrl+C in this terminal stops it, flushes the
+   last few seconds of speech to the file, and leaves the voice channel.
+
+## Sidecar mode (Rust songbird receive, experimental)
+
+`--mode sidecar` replaces Pycord voice receive with a small Rust recorder
+(`bot-rust/`, songbird 0.6 + DAVE) that streams per-user PCM + display names
+into the same Python transcribe worker. Build once (needs the Rust toolchain
+with MSVC build tools):
+
+```powershell
+cd V:\ttrpg-scribe\bot-rust
+cargo build --release
+ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
+```
+
+## Troubleshooting
+
+- Wrong mode (bot never joins, only `[cap] direct input…` lines): you ran in
+  `loopback` mode. Mapped folders now auto-select `hybrid` and print
+  `[mode] hybrid (folder mapping → …)` at startup — if you see `[mode] loopback`
+  instead, the folder path doesn't match the mapping (check
+  `ttrpg-scribe --maps`, paths are case-insensitive but must resolve to the
+  same folder) or you passed `--mode loopback`.
+- `ttrpg-scribe` not recognized in a new terminal: the installer puts it in
+  `Python312\Scripts`, which is on PATH — open a fresh terminal after install.
+- Loopback captures silence: check `ttrpg-scribe --list-devices`, confirm the
+  `Stream Mix` / speaker device is the one Discord plays through.
+- Bot joins but stops with `OpusError('corrupted stream')`: Discord's DAVE
+  encryption vs Pycord (#3139). The bot applies a local backport of the
+  known fix at startup (`[bot] DAVE workaround applied …`) and retries per
+  packet. If you still get silence or `Unknown (ssrc-…)` labels, use
+  loopback mode until Pycord ships the real fix.
+- `module 'discord' has no attribute 'sinks'`: you have stock `discord.py`
+  installed. Bot mode needs the Pycord fork: `pip uninstall -y discord.py`
+  then `pip install -e .` (which pulls `py-cord[voice]`).
+- `Opus not loaded`: DLL path wrong — set `"opus_dll_path"` to the full path.
+
+## Reinstall (fresh machine or broken Python env)
+
+```powershell
+cd V:\ttrpg-scribe
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+pip install -e .
+```
+
+The cu128 torch build is required for the 5070 Ti — a plain `pip install torch`
+may give you a CPU or older-CUDA build that can't see the GPU. Models
+re-download on first run (~2 GB, then offline).
