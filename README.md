@@ -111,7 +111,7 @@ line ~5–20 s after the words are spoken (utterance buffering + GPU).
    Nothing to type in Discord. Ctrl+C in this terminal stops it, flushes the
    last few seconds of speech to the file, and leaves the voice channel.
 
-## Sidecar mode (Rust songbird receive — default, best quality)
+## Sidecar mode (Rust songbird receive — best quality)
 
 `--mode sidecar` replaces Pycord voice receive with a small Rust recorder
 (`bot-rust/`, songbird 0.6 + DAVE) that streams per-user PCM + display names
