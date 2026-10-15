@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ttrpg-scribe"
 version = "0.2.0"
-description = "Local live transcription of Discord calls for TTRPG notes (no audio stored)"
+description = "Local live transcription of voice calls for TTRPG notes (no audio stored)"
 requires-python = ">=3.10"
 dependencies = [
     # Install torch from the cu128 index FIRST for Blackwell GPUs (see README).

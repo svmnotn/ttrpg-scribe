@@ -1,6 +1,6 @@
-# Discord TTRPG Scribe
+# TTRPG Scribe
 
-Live transcription of Discord calls for TTRPG session notes. Runs 100% locally
+Live transcription of voice calls for TTRPG session notes. Runs 100% locally
 on your NVIDIA GPU — free, no cloud, and **no audio is ever saved to disk**
 (buffers live in RAM, get transcribed, then are freed).
 
@@ -19,19 +19,19 @@ auto-detect when the language is known).
 
 | Mode | Audio | Speaker labels | Setup |
 |---|---|---|---|
-| `sidecar` | Rust songbird receive | Real Discord display names | Build `bot-rust` once (+ folder mapped for auto-join) |
+| `sidecar` | Rust songbird receive | Real server display names | Build `bot-rust` once (+ folder mapped for auto-join) |
 | `loopback` | Local capture (Stream Mix) | `SPEAKER_00`, `SPEAKER_01`, … | None |
-| `hybrid` (default, no build needed) | Local capture + presence names | Real Discord display names | Folder mapped |
-| `bot` | Bot's Discord receive | Real Discord display names | Invite the bot once (below) — currently degraded upstream (see below) |
+| `hybrid` (default, no build needed) | Local capture + presence names | Real server display names | Folder mapped |
+| `bot` | Bot voice receive | Real server display names | Invite the bot once (below) — currently degraded upstream (see below) |
 
 ```powershell
-# Mapped folder: hybrid — local audio + Discord names, no flags needed
+# Mapped folder: hybrid — local audio + server names, no flags needed
 ttrpg-scribe "C:\Notes\CurseOfStrahd"
 
-# Just local audio with diarized labels (no Discord needed at all)
+# Just local audio with diarized labels (no voice bot needed at all)
 ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode loopback
 
-# Legacy bot-record mode (per-user Discord streams; degraded by DAVE, see below)
+# Legacy bot-record mode (per-user voice streams; degraded by DAVE, see below)
 ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode bot --channel "Game Night"
 
 # One-off override: capture something else this time only
@@ -58,7 +58,7 @@ CLI flags always override the file for one run. If the configured source isn't
 found (device unplugged/renamed), you get a numbered list and pick one on the
 spot — with an offer to save it as the new default — instead of an error.
 
-## Folder → guild/channel mapping (all Discord modes)
+## Folder → guild/channel mapping (all voice modes)
 
 Skip `--guild`/`--channel` every run by pinning them to the folder. Several
 folders may share one target. A mapped folder auto-selects hybrid mode —
@@ -83,7 +83,10 @@ presence names with nothing to build. Use `bot` (record) only as a fallback. Use
 `loopback`/`--device` when you play on someone else's server. Expect each
 line ~5–20 s after the words are spoken (utterance buffering + GPU).
 
-## Bot setup (one time, ~10 min)
+## Discord backend setup (one time, ~10 min)
+
+The first supported voice backend is Discord; others can plug in via
+[SIDECAR_API.md](SIDECAR_API.md).
 
 1. <https://discord.com/developers> → New Application → Bot → Reset Token → copy it.
 2. OAuth2 → URL Generator → scopes `bot` + `applications.commands` →
@@ -109,7 +112,7 @@ line ~5–20 s after the words are spoken (utterance buffering + GPU).
    `ttrpg-scribe --map "C:\Notes\MyCampaign" --guild "My Server" --channel "Game Night"`.
    Mapped folders auto-join (sidecar mode) — no flags needed afterwards.
 7. Just run it — the bot joins the channel itself and starts transcribing.
-   Nothing to type in Discord. Ctrl+C in this terminal stops it, flushes the
+   Nothing to type in chat. Ctrl+C in this terminal stops it, flushes the
    last few seconds of speech to the file, and leaves the voice channel.
 
 ## Sidecar mode (Rust songbird receive — best quality)
@@ -142,7 +145,7 @@ Adding a capture bot for another voice app? The producer contract
 - `ttrpg-scribe` not recognized in a new terminal: the installer puts it in
   `Python312\Scripts`, which is on PATH — open a fresh terminal after install.
 - Loopback captures silence: check `ttrpg-scribe --list-devices`, confirm the
-  `Stream Mix` / speaker device is the one Discord plays through.
+  `Stream Mix` / speaker device is the one your voice app plays through.
 - Bot joins but stops with `OpusError('corrupted stream')`: Discord's DAVE
   encryption vs Pycord (#3139). The bot applies a local backport of the
   known fix at startup (`[bot] DAVE workaround applied …`) and retries per
@@ -177,7 +180,7 @@ older-CUDA build that can't see the GPU. The `--model` default can be lowered
 
 This repo was built entirely with `Muse Spark 1.3 Free`, and the owner
 has not read the code — expect rough edges, and please file issues with
-full console output. The focus is Discord voice, but PRs adding capture
-bots for other voice-chat apps are welcome. Released into the public
+full console output. Discord is the first supported backend, but PRs adding
+capture bots for other voice-chat apps are welcome. Released into the public
 domain (see LICENSE — third-party `opus.dll` excepted, see
 THIRD-PARTY-NOTICES.md).

@@ -25,7 +25,7 @@ import argparse
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="ttrpg-scribe",
-        description="Local Discord TTRPG transcriber (no audio stored).",
+        description="Local voice TTRPG transcriber (no audio stored).",
     )
     p.add_argument("game_dir", nargs="?", help="Folder for this game/campaign. A YYYY-MM-DD.txt file is created inside.")
     p.add_argument("--mode", choices=["loopback", "bot", "hybrid", "sidecar"], default=None,
@@ -40,9 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Microphone to mix in for loopback mode (case-insensitive substring).")
     p.add_argument("--model", default=None, help="faster-whisper model. Default from config (built-in: large-v3-turbo).")
     p.add_argument("--guild", default=None,
-                   help="Bot mode: server to join (name substring or id). Skipped if the bot is only on one server.")
+                   help="Voice-bot mode: server to join (name substring or id). Skipped if the bot is only on one server.")
     p.add_argument("--channel", default=None,
-                   help="Bot mode: voice channel to join and record (name substring or id).")
+                   help="Voice-bot mode: voice channel to join and record (name substring or id).")
     p.add_argument("--list-devices", action="store_true", help="List audio devices and exit.")
     p.add_argument("--show-config", action="store_true", help="Show configured defaults and exit.")
     p.add_argument("--set-default", nargs=2, metavar=("KEY", "VALUE"),

@@ -1,4 +1,4 @@
-"""Loopback capture (no Discord setup needed) → VAD utterances.
+"""Loopback capture (no voice-bot setup needed) → VAD utterances.
 
 Captures a speaker/output device via WASAPI loopback plus your mic, mixes
 them, and splits speech into 0.5–10 s utterances with WebRTC VAD.
@@ -151,7 +151,7 @@ def _emit_utterance(
     utterance: np.ndarray,
     prompt: str | None,
 ) -> str:
-    """Attribute (Discord name or diarized label), transcribe, write to
+    """Attribute (server name or diarized label), transcribe, write to
     console + file. Returns the transcribed text (for prompt chaining)."""
     label: str | None = None
     if speaker_fn is not None:
@@ -178,7 +178,7 @@ def run_loopback(
 ) -> None:
     """Blocking capture loop. Ctrl+C (or ``stop``) ends it.
 
-    ``speaker_fn`` maps an utterance duration to a Discord display name
+    ``speaker_fn`` maps an utterance duration to a server display name
     (hybrid mode); without it every line gets a diarized SPEAKER_XX label.
     """
     import warnings

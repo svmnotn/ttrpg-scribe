@@ -1,7 +1,7 @@
 """GPU transcription wrapper around faster-whisper.
 
 Runs fully locally. The 5070 Ti (16 GB) comfortably handles
-``large-v3-turbo`` in float16 with plenty of headroom for Discord + browser.
+``large-v3-turbo`` in float16 with plenty of headroom for voice chat + browser.
 Audio is transcribed from RAM buffers and never saved to disk.
 
 English-only by design: the language is locked to English, which is faster

@@ -1,7 +1,7 @@
-"""Discord bot mode: per-user audio streams → perfect speaker names.
+"""Voice-bot capture mode (Discord backend): per-user audio streams → perfect speaker names.
 
 Each person in voice is a separate Opus stream, so no diarization is needed —
-the transcript is labeled with real Discord display names. This is the most
+the transcript is labeled with real server display names. This is the most
 accurate mode; use it on servers where you (or your GM) can invite the bot.
 
 Requires the Pycord fork (``py-cord[voice]``) — stock ``discord.py`` has no
@@ -58,15 +58,15 @@ if TYPE_CHECKING:
 
 
 def _require_discord() -> None:
-    """Friendly error when the optional Discord libraries are missing.
+    """Friendly error when the optional voice-bot libraries are missing.
 
-    Loopback/sidecar modes never touch discord; bot/hybrid modes do.
+    Loopback/sidecar modes never touch them; bot/hybrid modes do.
     """
     try:
         import discord  # noqa: F401
     except ImportError:
         raise SystemExit(
-            "[bot] bot/hybrid modes need the Discord libraries, which are not installed.\n"
+            "[bot] bot/hybrid modes need the Discord voice libraries, which are not installed.\n"
             "Install them: pip install -e \".[discord]\" "
             "(or: pip install \"py-cord[voice]>=2.5\")"
         )
