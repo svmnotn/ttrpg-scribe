@@ -22,8 +22,13 @@ dependencies = [
     # with "cublas64_12.dll is not found"). Wired at runtime in transcribe.py.
     "nvidia-cublas-cu12",
     "nvidia-cuda-runtime-cu12",
-    # Voice receive (discord.sinks + start_recording) only exists in the
-    # Pycord fork — stock discord.py has no discord.sinks module.
+    # NOTE: Discord capture is optional — loopback and sidecar modes work
+    # without any Discord library. Bot/hybrid modes need the discord extra
+    # below (Pycord fork: stock discord.py has no voice receive).
+]
+
+[project.optional-dependencies]
+discord = [
     "py-cord[voice]>=2.5",
 ]
 

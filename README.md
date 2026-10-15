@@ -153,8 +153,13 @@ ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
 ```powershell
 cd V:\ttrpg-scribe
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
-pip install -e .
+pip install -e .                  # loopback + sidecar modes (no Discord library needed)
+pip install -e ".[discord]"       # additionally: bot + hybrid modes (Pycord voice)
 ```
+
+Discord capture is optional: the base install covers loopback (local audio)
+and sidecar (the sidecar is a separate Rust binary, needs `cargo build`
+once — see above). Only `bot` and `hybrid` need the `[discord]` extra.
 
 Any recent NVIDIA GPU works (8 GB+ VRAM comfortably runs
 `large-v3-turbo` in float16). RTX 50xx (Blackwell) cards specifically need
@@ -162,3 +167,11 @@ the cu128 torch build — a plain `pip install torch` may give you a CPU or
 older-CUDA build that can't see the GPU. The `--model` default can be lowered
 (`small`, `medium`) on weaker cards. Models re-download on first run
 (~2 GB, then offline).
+
+## About & contributing
+
+This repo was built entirely with `Muse Spark 1.3 Free`, and the owner
+has not read the code — expect rough edges, and please file issues with
+full console output. The focus is Discord voice, but PRs adding capture
+bots for other voice-chat apps are welcome. Released into the public
+domain (see LICENSE).

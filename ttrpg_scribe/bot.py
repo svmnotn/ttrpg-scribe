@@ -57,6 +57,21 @@ if TYPE_CHECKING:
     from ttrpg_scribe.writer import NotesWriter
 
 
+def _require_discord() -> None:
+    """Friendly error when the optional Discord libraries are missing.
+
+    Loopback/sidecar modes never touch discord; bot/hybrid modes do.
+    """
+    try:
+        import discord  # noqa: F401
+    except ImportError:
+        raise SystemExit(
+            "[bot] bot/hybrid modes need the Discord libraries, which are not installed.\n"
+            "Install them: pip install -e \".[discord]\" "
+            "(or: pip install \"py-cord[voice]>=2.5\")"
+        )
+
+
 def _match_one(wanted: str, options: Sequence[tuple[str, Any]], kind: str) -> Any:
     """Match by numeric ID or case-insensitive name substring."""
     if wanted.isdigit():
@@ -725,6 +740,7 @@ def run_sidecar(writer: NotesWriter, transcriber: StreamingTranscriber,
 def run_bot(writer: NotesWriter, transcriber: StreamingTranscriber,
             token: str | None = None,
             guild: str | None = None, channel: str | None = None) -> None:
+    _require_discord()
     import discord
     from discord.ext import commands
 
@@ -966,6 +982,7 @@ def run_presence(timeline: SpeakerTimeline, token: str | None = None,
     apply. Pair with loopback capture (``hybrid`` mode) for clean local audio
     labeled with true Discord names, correlated by timing.
     """
+    _require_discord()
     import discord
     from discord.ext import commands
 
