@@ -2,6 +2,7 @@
 name = "ttrpg-sidecar"
 version = "0.1.0"
 edition = "2021"
+license = "Unlicense"
 
 # Voice receive for ttrpg-scribe: joins a Discord voice channel via
 # Songbird (Rust, DAVE-capable) and streams per-user decoded PCM plus
