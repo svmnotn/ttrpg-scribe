@@ -1,7 +1,7 @@
 # Discord TTRPG Scribe
 
 Live transcription of Discord calls for TTRPG session notes. Runs 100% locally
-on your RTX 5070 Ti — free, no cloud, and **no audio is ever saved to disk**
+on your NVIDIA GPU — free, no cloud, and **no audio is ever saved to disk**
 (buffers live in RAM, get transcribed, then are freed).
 
 ```powershell
@@ -58,10 +58,10 @@ CLI flags always override the file for one run. If the configured source isn't
 found (device unplugged/renamed), you get a numbered list and pick one on the
 spot — with an offer to save it as the new default — instead of an error.
 
-## Folder → guild/channel mapping (bot mode)
+## Folder → guild/channel mapping (all Discord modes)
 
 Skip `--guild`/`--channel` every run by pinning them to the folder. Several
-folders may share one target. A mapped folder auto-selects bot mode —
+folders may share one target. A mapped folder auto-selects sidecar mode —
 no `--mode` flag needed (pass `--mode loopback` to override for one run):
 
 ```powershell
@@ -77,12 +77,12 @@ Precedence: `--mode`/`--guild`/`--channel` flags > folder mapping (implies sidec
 `--set-default mode sidecar` works too, so a bare folder on any machine
 defaults to the sidecar without a mapping.
 
-Use `hybrid` for the best of both (your case for every mapped campaign):
-clean local audio plus true per-player names, correlated by timing. The bot
-joins voice presence-only — it hears nothing, records nothing, and DAVE
-breaks nothing; it only reports who is speaking when. Use `bot` (record)
-only when there is no local capture. Use `loopback`/`--device` when you
-play on someone else's server. Delay is a few seconds either way.
+Use `sidecar` for the best quality (the default for mapped campaigns):
+per-user Discord audio with true names, no local capture needed. Use
+`hybrid` when the sidecar isn't built — clean local audio plus presence
+names, correlated by timing. Use `bot` (record) only as a fallback. Use
+`loopback`/`--device` when you play on someone else's server. Expect each
+line ~5–20 s after the words are spoken (utterance buffering + GPU).
 
 ## Bot setup (one time, ~10 min)
 
@@ -95,9 +95,10 @@ play on someone else's server. Delay is a few seconds either way.
    Save. This is what gives transcripts server nicknames instead of
    `User 123…`. (Small private servers need no verification for this.)
    If you skip it, the scribe refuses to start and tells you exactly this.
-4. Opus voice library: already installed (`opus.dll` in the project folder,
-   wired up via `"opus_dll_path"`). Skip this step unless the bot complains
-   about Opus at startup.
+4. Opus voice library (only needed for `--mode bot`): already installed
+   (`opus.dll` in the project folder, wired up via `"opus_dll_path"`).
+   Skip this step unless the bot complains about Opus at startup — sidecar,
+   hybrid, and loopback modes never touch it.
 5. Save the token as `"discord_token"` in `%USERPROFILE%\.ttrpg-scribe.json`
    (see `config.example.json`) — easiest with:
    `code $env:USERPROFILE\.ttrpg-scribe.json`
@@ -106,17 +107,19 @@ play on someone else's server. Delay is a few seconds either way.
    `ttrpg-scribe --set-default channel "Game Night"` (one run per key).
 6. Pin the folder once:
    `ttrpg-scribe --map "C:\Notes\MyCampaign" --guild "My Server" --channel "Game Night"`.
-   Mapped folders auto-join (hybrid mode) — no flags needed afterwards.
-7. Just run it — the bot joins the channel itself and starts recording.
+   Mapped folders auto-join (sidecar mode) — no flags needed afterwards.
+7. Just run it — the bot joins the channel itself and starts transcribing.
    Nothing to type in Discord. Ctrl+C in this terminal stops it, flushes the
    last few seconds of speech to the file, and leaves the voice channel.
 
-## Sidecar mode (Rust songbird receive, experimental)
+## Sidecar mode (Rust songbird receive — default, best quality)
 
 `--mode sidecar` replaces Pycord voice receive with a small Rust recorder
 (`bot-rust/`, songbird 0.6 + DAVE) that streams per-user PCM + display names
-into the same Python transcribe worker. Build once (needs the Rust toolchain
-with MSVC build tools):
+into the same Python transcribe worker. In testing it transcribes near
+verbatim where the Pycord path garbles. Build once — needs the Rust
+toolchain plus MSVC build tools and cmake (e.g.
+`winget install -e --id Kitware.CMake`):
 
 ```powershell
 cd V:\ttrpg-scribe\bot-rust
@@ -127,8 +130,8 @@ ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
 ## Troubleshooting
 
 - Wrong mode (bot never joins, only `[cap] direct input…` lines): you ran in
-  `loopback` mode. Mapped folders now auto-select `hybrid` and print
-  `[mode] hybrid (folder mapping → …)` at startup — if you see `[mode] loopback`
+  `loopback` mode. Mapped folders now auto-select `sidecar` and print
+  `[mode] sidecar (folder mapping → …)` at startup — if you see `[mode] loopback`
   instead, the folder path doesn't match the mapping (check
   `ttrpg-scribe --maps`, paths are case-insensitive but must resolve to the
   same folder) or you passed `--mode loopback`.
@@ -139,8 +142,8 @@ ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
 - Bot joins but stops with `OpusError('corrupted stream')`: Discord's DAVE
   encryption vs Pycord (#3139). The bot applies a local backport of the
   known fix at startup (`[bot] DAVE workaround applied …`) and retries per
-  packet. If you still get silence or `Unknown (ssrc-…)` labels, use
-  loopback mode until Pycord ships the real fix.
+  packet. If you still get silence or `Unknown (ssrc-…)` labels, prefer
+  `sidecar` (or `hybrid`/`loopback`) over Pycord receive.
 - `module 'discord' has no attribute 'sinks'`: you have stock `discord.py`
   installed. Bot mode needs the Pycord fork: `pip uninstall -y discord.py`
   then `pip install -e .` (which pulls `py-cord[voice]`).
@@ -154,6 +157,9 @@ pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 pip install -e .
 ```
 
-The cu128 torch build is required for the 5070 Ti — a plain `pip install torch`
-may give you a CPU or older-CUDA build that can't see the GPU. Models
-re-download on first run (~2 GB, then offline).
+Any recent NVIDIA GPU works (8 GB+ VRAM comfortably runs
+`large-v3-turbo` in float16). RTX 50xx (Blackwell) cards specifically need
+the cu128 torch build — a plain `pip install torch` may give you a CPU or
+older-CUDA build that can't see the GPU. The `--model` default can be lowered
+(`small`, `medium`) on weaker cards. Models re-download on first run
+(~2 GB, then offline).
