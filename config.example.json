@@ -1,0 +1,14 @@
+{
+  "defaults": {
+    "mode": "sidecar",
+    "input": "Broadcast Stream Mix",
+    "device": "",
+    "mic": "",
+    "model": "large-v3-turbo",
+    "guild": "",
+    "channel": ""
+  },
+  "discord_token": "",
+  "opus_dll_path": "",
+  "maps": {}
+}

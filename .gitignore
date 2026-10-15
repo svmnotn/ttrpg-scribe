@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+ttrpg_scribe.egg-info/
+.venv/
+venv/
+
+# Rust
+target/
+bot-rust/target/
+bot-rust/.tools/
+
+# Logs and local scratch
+*.log
+check*.log
+build-rel*.log

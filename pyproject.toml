@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ttrpg-scribe"
+version = "0.2.0"
+description = "Local live transcription of Discord calls for TTRPG notes (no audio stored)"
+requires-python = ">=3.10"
+dependencies = [
+    # Install torch from the cu128 index FIRST for Blackwell GPUs (see README).
+    "torch>=2.7",
+    "torchaudio>=2.7",
+    "faster-whisper>=1.0.3",
+    "speechbrain>=1.0.0",
+    "soundcard>=0.4.0",
+    "webrtcvad-wheels>=2.0.14",
+    "numpy>=1.26",
+    "scipy>=1.12",
+    # CUDA 12 runtime for faster-whisper/ctranslate2 (Windows has no CUDA 12
+    # toolkit here; ctranslate2 needs these DLLs or the first GPU encode dies
+    # with "cublas64_12.dll is not found"). Wired at runtime in transcribe.py.
+    "nvidia-cublas-cu12",
+    "nvidia-cuda-runtime-cu12",
+    # Voice receive (discord.sinks + start_recording) only exists in the
+    # Pycord fork — stock discord.py has no discord.sinks module.
+    "py-cord[voice]>=2.5",
+]
+
+[project.scripts]
+ttrpg-scribe = "ttrpg_scribe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ttrpg_scribe*"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+disallow_untyped_defs = true
+show_error_codes = true
