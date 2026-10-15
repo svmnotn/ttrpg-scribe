@@ -97,7 +97,8 @@ line ~5–20 s after the words are spoken (utterance buffering + GPU).
 4. Opus voice library (only needed for `--mode bot`): already installed
    (`opus.dll` in the project folder, wired up via `"opus_dll_path"`).
    Skip this step unless the bot complains about Opus at startup — sidecar,
-   hybrid, and loopback modes never touch it.
+   hybrid, and loopback modes never touch it. The DLL is redistributed
+   under its own BSD license; see THIRD-PARTY-NOTICES.md.
 5. Save the token as `"discord_token"` in `%USERPROFILE%\.ttrpg-scribe.json`
    (see `config.example.json`) — easiest with:
    `code $env:USERPROFILE\.ttrpg-scribe.json`
