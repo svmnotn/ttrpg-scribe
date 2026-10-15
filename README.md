@@ -179,4 +179,5 @@ This repo was built entirely with `Muse Spark 1.3 Free`, and the owner
 has not read the code — expect rough edges, and please file issues with
 full console output. The focus is Discord voice, but PRs adding capture
 bots for other voice-chat apps are welcome. Released into the public
-domain (see LICENSE).
+domain (see LICENSE — third-party `opus.dll` excepted, see
+THIRD-PARTY-NOTICES.md).
