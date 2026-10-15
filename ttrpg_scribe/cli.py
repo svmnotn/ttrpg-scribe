@@ -4,7 +4,7 @@ Usage:
   ttrpg-scribe "C:\\Notes\\CurseOfStrahd"          # Stream Mix default, nothing else needed
   ttrpg-scribe "C:\\Notes\\CurseOfStrahd" --mode bot --channel "Game Night"
   ttrpg-scribe --map "C:\\Notes\\CurseOfStrahd" --channel "Game Night"   # remember it
-  ttrpg-scribe "C:\\Notes\\CurseOfStrahd"          # mapped folder: sidecar (names + clean audio)
+  ttrpg-scribe "C:\\Notes\\CurseOfStrahd"          # mapped folder: hybrid (names + local audio)
   ttrpg-scribe --maps                    # list folder mappings
   ttrpg-scribe --unmap "C:\\Notes\\Old"  # forget one
   ttrpg-scribe "C:\\Notes\\CurseOfStrahd" --input "Chat"   # one-off override
@@ -12,7 +12,7 @@ Usage:
   ttrpg-scribe --show-config
   ttrpg-scribe --list-devices
 
-Mode selection: --mode flag > folder mapping (implies sidecar) > config default.
+Mode selection: --mode flag > folder mapping (implies hybrid) > config default.
 Defaults live in %USERPROFILE%\\.ttrpg-scribe.json (one file for everything).
 If the configured capture source is missing, you get a numbered device list
 and pick one on the spot instead of an error.
@@ -29,8 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("game_dir", nargs="?", help="Folder for this game/campaign. A YYYY-MM-DD.txt file is created inside.")
     p.add_argument("--mode", choices=["loopback", "bot", "hybrid", "sidecar"], default=None,
-                   help="Capture path. --mode wins; else a folder mapping implies sidecar; "
-                        "else config default (built-in: sidecar).")
+                   help="Capture path. --mode wins; else a folder mapping implies hybrid; "
+                        "else config default (built-in: hybrid).")
     p.add_argument("--input", default=None,
                    help="Capture a recording device directly, no mixing (case-insensitive substring). "
                         "Default comes from config (built-in: your GoXLR Stream Mix).")
@@ -57,12 +57,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def _resolve_mode(game_dir: str, args_mode: str | None,
                   settings: dict[str, str], mapped: dict[str, str]) -> str:
-    """Pick capture mode: --mode flag > folder mapping (implies sidecar) >
-    config default (built-in: sidecar). args_mode is None when unpassed."""
+    """Pick capture mode: --mode flag > folder mapping (implies hybrid) >
+    config default (built-in: hybrid). args_mode is None when unpassed."""
     if args_mode:
         return args_mode
     if mapped.get("channel"):
-        return "sidecar"
+        return "hybrid"
     return settings.get("mode") or "loopback"
 
 

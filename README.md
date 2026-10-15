@@ -19,13 +19,13 @@ auto-detect when the language is known).
 
 | Mode | Audio | Speaker labels | Setup |
 |---|---|---|---|
-| `sidecar` (default) | Rust songbird receive | Real Discord display names | Build `bot-rust` once (+ folder mapped for auto-join) |
+| `sidecar` | Rust songbird receive | Real Discord display names | Build `bot-rust` once (+ folder mapped for auto-join) |
 | `loopback` | Local capture (Stream Mix) | `SPEAKER_00`, `SPEAKER_01`, … | None |
-| `hybrid` | Local capture + presence names | Real Discord display names | Folder mapped |
+| `hybrid` (default, no build needed) | Local capture + presence names | Real Discord display names | Folder mapped |
 | `bot` | Bot's Discord receive | Real Discord display names | Invite the bot once (below) — currently degraded upstream (see below) |
 
 ```powershell
-# Mapped folder: sidecar — clean remote audio + Discord names, no flags needed
+# Mapped folder: hybrid — local audio + Discord names, no flags needed
 ttrpg-scribe "C:\Notes\CurseOfStrahd"
 
 # Just local audio with diarized labels (no Discord needed at all)
@@ -43,7 +43,7 @@ ttrpg-scribe --list-devices
 
 ## Defaults are configurable
 
-Built-in default: Stream Mix capture, sidecar mode. Everything — defaults,
+Built-in default: Stream Mix capture, hybrid mode. Everything — defaults,
 bot token, folder mappings — lives in one file, `%USERPROFILE%\.ttrpg-scribe.json`
 (see `config.example.json`):
 
@@ -61,7 +61,7 @@ spot — with an offer to save it as the new default — instead of an error.
 ## Folder → guild/channel mapping (all Discord modes)
 
 Skip `--guild`/`--channel` every run by pinning them to the folder. Several
-folders may share one target. A mapped folder auto-selects sidecar mode —
+folders may share one target. A mapped folder auto-selects hybrid mode —
 no `--mode` flag needed (pass `--mode loopback` to override for one run):
 
 ```powershell
@@ -72,15 +72,14 @@ ttrpg-scribe --maps                                 # list them
 ttrpg-scribe --unmap "C:\Notes\OneShot"             # forget one
 ```
 
-Precedence: `--mode`/`--guild`/`--channel` flags > folder mapping (implies sidecar) > config defaults.
+Precedence: `--mode`/`--guild`/`--channel` flags > folder mapping (implies hybrid) > config defaults.
 
-`--set-default mode sidecar` works too, so a bare folder on any machine
-defaults to the sidecar without a mapping.
+`--set-default mode sidecar` pins the sidecar instead, so a bare folder on
+any machine uses remote receive without a mapping.
 
-Use `sidecar` for the best quality (the default for mapped campaigns):
-per-user Discord audio with true names, no local capture needed. Use
-`hybrid` when the sidecar isn't built — clean local audio plus presence
-names, correlated by timing. Use `bot` (record) only as a fallback. Use
+Use `sidecar` for the best quality (per-user remote audio, no local capture
+needed). `hybrid` is the out-of-the-box default: clean local audio plus
+presence names with nothing to build. Use `bot` (record) only as a fallback. Use
 `loopback`/`--device` when you play on someone else's server. Expect each
 line ~5–20 s after the words are spoken (utterance buffering + GPU).
 
@@ -130,8 +129,8 @@ ttrpg-scribe "C:\Notes\CurseOfStrahd" --mode sidecar
 ## Troubleshooting
 
 - Wrong mode (bot never joins, only `[cap] direct input…` lines): you ran in
-  `loopback` mode. Mapped folders now auto-select `sidecar` and print
-  `[mode] sidecar (folder mapping → …)` at startup — if you see `[mode] loopback`
+  `loopback` mode. Mapped folders now auto-select `hybrid` and print
+  `[mode] hybrid (folder mapping → …)` at startup — if you see `[mode] loopback`
   instead, the folder path doesn't match the mapping (check
   `ttrpg-scribe --maps`, paths are case-insensitive but must resolve to the
   same folder) or you passed `--mode loopback`.

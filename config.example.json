@@ -1,6 +1,6 @@
 {
   "defaults": {
-    "mode": "sidecar",
+    "mode": "hybrid",
     "input": "Broadcast Stream Mix",
     "device": "",
     "mic": "",

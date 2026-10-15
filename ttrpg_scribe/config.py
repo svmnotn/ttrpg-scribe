@@ -16,7 +16,7 @@ from typing import Any
 CONFIG_PATH = Path.home() / ".ttrpg-scribe.json"
 
 DEFAULTS: dict[str, str] = {
-    "mode": "sidecar",
+    "mode": "hybrid",
     "input": "Broadcast Stream Mix",
     "device": "",
     "mic": "",
