@@ -1,0 +1,20 @@
+[package]
+name = "ttrpg-sidecar"
+version = "0.1.0"
+edition = "2021"
+
+# Voice receive for ttrpg-scribe: joins a Discord voice channel via
+# Songbird (Rust, DAVE-capable) and streams per-user decoded PCM plus
+# display names to stdout as length-prefixed frames for the Python
+# transcriber. All logs go to stderr — stdout is binary.
+#
+# Frame protocol (little-endian):
+#   N frame (name):  b'N' | uid:u64 | namelen:u32 | name utf-8 bytes
+#   A frame (audio): b'A' | uid:u64 | pcmlen:u32  | pcm s16le bytes (48 kHz stereo)
+
+[dependencies]
+serenity = { version = "0.12", features = ["client", "gateway", "cache", "voice", "http", "rustls_backend"] }
+songbird = { version = "0.6", default-features = true, features = ["receive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+dashmap = "6"
+tracing-subscriber = "0.3"
