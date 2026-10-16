@@ -18,12 +18,14 @@ class NotesWriter:
 
     game_dir: Path
     path: Path
+    debug_path: Path
     _lock: threading.Lock
 
     def __init__(self, game_dir: str | Path) -> None:
         self.game_dir = Path(game_dir).expanduser()
         self.game_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.game_dir / f"{date.today().isoformat()}.txt"
+        self.debug_path = self.game_dir / f"{date.today().isoformat()}-debug.log"
         self._lock = threading.Lock()
         new_file = not self.path.exists()
         with self._lock, self.path.open("a", encoding="utf-8") as f:

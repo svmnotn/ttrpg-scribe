@@ -483,9 +483,20 @@ class UtterancePump:
         transcribe_fn: Callable[[Any, str, np.ndarray], None],
         transport_seconds: float = 2.0,
         name_resolver: Callable[[Any], str | None] | None = None,
+        debug_log: Any = None,
+        verbose: bool = False,
     ) -> None:
         self._fn = transcribe_fn
         self._resolver = name_resolver
+        self._debug_log = debug_log
+        self._verbose = verbose
+        if self._debug_log is not None:
+            try:
+                from datetime import datetime
+                with open(self._debug_log, "a", encoding="utf-8") as f:
+                    f.write(f"\n---\n## Audio session started {datetime.now().isoformat(timespec='seconds')}\n")
+            except Exception:
+                pass
         # 48 kHz stereo s16le transport batches per user before handoff.
         self._flush_bytes = int(48000 * 2 * 2 * transport_seconds)
         self._bufs: dict[Any, bytearray] = {}
@@ -549,6 +560,18 @@ class UtterancePump:
         self._tx_thread.join(timeout=max(1.0, timeout - 5.0))
         return self.chunks, len(self.speakers), self.utterances
 
+    def _debug(self, line: str) -> None:
+        """Telemetry to the per-day debug log; console only with --debug."""
+        if self._debug_log is not None:
+            try:
+                from datetime import datetime
+                with open(self._debug_log, "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {line}\n")
+            except Exception:
+                pass
+        if self._verbose:
+            print(line, flush=True)
+
     def _maybe_resolve(self, uid: Any) -> str:
         """Server display name for a fallback-labeled speaker, once per uid."""
         with self._nlock:
@@ -593,11 +616,10 @@ class UtterancePump:
             if time.monotonic() - last_beat >= 15.0:
                 last_beat = time.monotonic()
                 loss = _WORKAROUND_STATS
-                print(f"[bot] audio: {self.chunks} chunks, {len(self.speakers)} speaker(s), "
+                self._debug(f"[bot] audio: {self.chunks} chunks, {len(self.speakers)} speaker(s), "
                       f"{self.utterances} utterance(s), level rms={ema:.4f} peak={peak_hold:.3f}, "
                       f"loss=dave:{loss['dave_silence']}/plc:{loss['fake_plc']}/skip:{loss['skipped']}"
-                      f"/rtp:{loss['rtp_in']}/jb:{loss['jb_drops']}",
-                      flush=True)
+                      f"/rtp:{loss['rtp_in']}/jb:{loss['jb_drops']}")
                 peak_hold = 0.0
             pcm16 = (np.clip(mono16, -1.0, 1.0) * 32767).astype(np.int16).tobytes()
             chunker = self._vad.get(uid)
@@ -677,7 +699,7 @@ def _forward_sidecar_frames(stream: Any, pump: UtterancePump,
 
 def run_sidecar(writer: NotesWriter, transcriber: StreamingTranscriber,
                 guild: str | None = None, channel: str | None = None,
-                token: str | None = None) -> None:
+                token: str | None = None, debug: bool = False) -> None:
     """Capture via the Rust songbird sidecar into the shared transcribe worker.
 
     The sidecar (``bot-rust/``) joins voice and streams per-user PCM + display
@@ -707,7 +729,9 @@ def run_sidecar(writer: NotesWriter, transcriber: StreamingTranscriber,
                             stderr=None, env=env)
     assert proc.stdout is not None and proc.stdin is not None
 
-    pump = UtterancePump(_make_transcribe_user(writer, transcriber))
+    pump = UtterancePump(_make_transcribe_user(writer, transcriber),
+                         debug_log=getattr(writer, "debug_path", None),
+                         verbose=debug)
     names: dict[int, str] = {}
     stop_reader = threading.Event()
 
@@ -739,7 +763,8 @@ def run_sidecar(writer: NotesWriter, transcriber: StreamingTranscriber,
 
 def run_bot(writer: NotesWriter, transcriber: StreamingTranscriber,
             token: str | None = None,
-            guild: str | None = None, channel: str | None = None) -> None:
+            guild: str | None = None, channel: str | None = None,
+            debug: bool = False) -> None:
     _require_discord()
     import discord
     from discord.ext import commands
@@ -799,9 +824,12 @@ def run_bot(writer: NotesWriter, transcriber: StreamingTranscriber,
             self,
             transcribe_fn: Callable[[Any, str, np.ndarray], None],
             name_resolver: Callable[[Any], str | None] | None = None,
+            debug_log: Any = None,
+            verbose: bool = False,
         ) -> None:
             super().__init__()
-            self._pump = UtterancePump(transcribe_fn, name_resolver=name_resolver)
+            self._pump = UtterancePump(transcribe_fn, name_resolver=name_resolver,
+                                       debug_log=debug_log, verbose=verbose)
 
         def walk_children(self) -> list[Any]:  # no nested sinks
             return []
@@ -881,6 +909,8 @@ def run_bot(writer: NotesWriter, transcriber: StreamingTranscriber,
             sink = TranscriptionSink(
                 transcribe_user,
                 lambda uid: _resolve_guild_name(target_guild, loop, uid),
+                debug_log=getattr(writer, "debug_path", None),
+                verbose=debug,
             )
             sink.init(vc)  # AudioReader never sets sink.vc; decoder asserts sink.client
             try:
