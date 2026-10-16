@@ -147,16 +147,26 @@ def _emit_utterance(
     writer: NotesWriter,
     cluster: SpeakerCluster,
     transcriber: StreamingTranscriber,
-    speaker_fn: Callable[[float], str | None] | None,
+    speaker_fn: Callable[[float, float], str | None] | None,
     utterance: np.ndarray,
     prompt: str | None,
+    end: float | None = None,
 ) -> str:
     """Attribute (server name or diarized label), transcribe, write to
-    console + file. Returns the transcribed text (for prompt chaining)."""
+    console + file. Returns the transcribed text (for prompt chaining).
+
+    ``end`` is the monotonic timestamp when this utterance finished being
+    captured. It must be taken at capture time, BEFORE the (slow) GPU
+    transcribe call — otherwise a transcription backlog shifts the
+    timeline lookup window past the speaking event and every line falls
+    back to SPEAKER_XX.
+    """
+    import time
     label: str | None = None
     if speaker_fn is not None:
         try:
-            label = speaker_fn(float(utterance.size) / SAMPLE_RATE)
+            label = speaker_fn(end if end is not None else time.monotonic(),
+                               float(utterance.size) / SAMPLE_RATE)
         except Exception:
             label = None
     if label is None:
@@ -173,14 +183,16 @@ def run_loopback(
     device: str | None = None,
     mic: str | None = None,
     input_dev: str | None = None,
-    speaker_fn: Callable[[float], str | None] | None = None,
+    speaker_fn: Callable[[float, float], str | None] | None = None,
     stop: threading.Event | None = None,
 ) -> None:
     """Blocking capture loop. Ctrl+C (or ``stop``) ends it.
 
-    ``speaker_fn`` maps an utterance duration to a server display name
-    (hybrid mode); without it every line gets a diarized SPEAKER_XX label.
+    ``speaker_fn(end, duration)`` maps an utterance ending at monotonic
+    time ``end`` to a server display name (hybrid mode); without it every
+    line gets a diarized SPEAKER_XX label.
     """
+    import time
     import warnings
 
     import soundcard as sc
@@ -202,17 +214,18 @@ def run_loopback(
             try:
                 while stop is None or not stop.is_set():
                     frames = rec.record(numframes=SAMPLE_RATE)
+                    batch_end = time.monotonic()
                     pcm16 = (np.clip(frames[:, 0], -1.0, 1.0) * 32767).astype(np.int16).tobytes()
                     for utterance in chunker.feed(pcm16):
                         text = _emit_utterance(writer, cluster, transcriber, speaker_fn,
-                                               utterance, prompt())
+                                               utterance, prompt(), batch_end)
                         if text and _prompt_worthy(text):
                             last_text = text
             finally:
                 tail = chunker.flush()  # don't drop trailing words on stop
                 if tail is not None:
                     _emit_utterance(writer, cluster, transcriber, speaker_fn,
-                                    tail, prompt())
+                                    tail, prompt(), time.monotonic())
         return
     speaker = _match(sc.all_speakers(), device, "speaker/output") if device else sc.default_speaker()
     microphone = _match(sc.all_microphones(include_loopback=False), mic, "microphone") if mic else sc.default_microphone()
@@ -227,15 +240,16 @@ def run_loopback(
             while stop is None or not stop.is_set():
                 heard = spk.record(numframes=SAMPLE_RATE)
                 said = m.record(numframes=SAMPLE_RATE)
+                batch_end = time.monotonic()
                 mixed = np.clip(heard[:, 0] + said[:, 0], -1.0, 1.0)
                 pcm16 = (mixed * 32767).astype(np.int16).tobytes()
                 for utterance in chunker.feed(pcm16):
                     text = _emit_utterance(writer, cluster, transcriber, speaker_fn,
-                                           utterance, prompt())
+                                           utterance, prompt(), batch_end)
                     if text and _prompt_worthy(text):
                         last_text = text
         finally:
             tail = chunker.flush()  # don't drop trailing words on stop
             if tail is not None:
                 _emit_utterance(writer, cluster, transcriber, speaker_fn,
-                                tail, prompt())
+                                tail, prompt(), time.monotonic())

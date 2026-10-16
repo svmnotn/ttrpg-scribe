@@ -251,7 +251,6 @@ def main(argv: list[str] | None = None) -> None:
                          device=sel["device"], mic=sel["mic"], input_dev=sel["input"])
         elif mode == "hybrid":
             import threading
-            import time
 
             from ttrpg_scribe.bot import SpeakerTimeline, run_presence
             from ttrpg_scribe.diarizer import SpeakerCluster
@@ -261,8 +260,8 @@ def main(argv: list[str] | None = None) -> None:
             sel = resolve_capture(args, settings)
             stop = threading.Event()
 
-            def speaker_for(duration: float) -> str | None:
-                return timeline.attribute(time.monotonic(), duration)
+            def speaker_for(end: float, duration: float) -> str | None:
+                return timeline.attribute(end, duration)
 
             cap = threading.Thread(
                 target=run_loopback, daemon=True, name="ttrpg-loopback",
