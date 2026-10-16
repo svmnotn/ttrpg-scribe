@@ -48,7 +48,7 @@ from typing import TYPE_CHECKING, Any, cast
 import numpy as np
 
 from ttrpg_scribe.loopback import VadChunker
-from ttrpg_scribe.transcribe import _prompt_worthy
+from ttrpg_scribe.transcribe import _prompt_worthy, _rms, is_silence_echo
 
 if TYPE_CHECKING:
     from discord.voice import VoiceClient
@@ -649,14 +649,26 @@ def _make_transcribe_user(
 ) -> Callable[[Any, str, np.ndarray], None]:
     """Per-utterance callback with prompt chaining (shared by bot/sidecar)."""
     _last_text: dict[Any, str] = {}
+    _last_emitted: dict[Any, str] = {}
 
     def transcribe_user(uid: Any, name: str, utterance: np.ndarray) -> None:
         # Previous utterance as Whisper prompt: names/terms carry over.
         # Garbage never becomes a prompt (it would poison the session).
         prompt = _last_text.get(uid)
         text = transcriber.transcribe(utterance, prompt=(prompt[-224:] if prompt else None))
-        if text and _prompt_worthy(text):
+        if not text:
+            return
+        # Quiet-period guard: a low-energy decode that echoes what this
+        # speaker last said is a silence hallucination, not new speech —
+        # drop it even when the transcribe-level check missed it (e.g. the
+        # prompt chain points at an older line because the last decode was
+        # unworthy). Loud verbatim repeats still pass (real speech).
+        prev = _last_emitted.get(uid)
+        if prev and is_silence_echo(text, prev, _rms(utterance)):
+            return
+        if _prompt_worthy(text):
             _last_text[uid] = text
+        _last_emitted[uid] = text
         writer.write(name, text)
 
     return transcribe_user
