@@ -47,6 +47,47 @@ def _wire_cuda_dlls() -> None:
         os.environ["PATH"] = os.pathsep.join(sorted(dirs)) + os.pathsep + os.environ.get("PATH", "")
 
 
+def _normalize(text: str) -> str:
+    """Lowercase, punctuation-free, single-spaced — for repeat comparison."""
+    import re
+
+    lowered = text.lower()
+    stripped = re.sub(r"[^a-z0-9\s]", "", lowered)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def _is_prompt_repeat(text: str, prompt: str | None) -> bool:
+    """Whether Whisper just echoed its prompt back (silence hallucination).
+
+    On near-silence Whisper often returns the ``initial_prompt`` verbatim —
+    the previous utterance — instead of nothing. Short interjections
+    ("yeah") legitimately repeat in conversation, so only sentence-length
+    echoes (>= 15 normalized chars) count.
+    """
+    if not text or not prompt:
+        return False
+    n, p = _normalize(text), _normalize(prompt)
+    if len(n) < 15:
+        return False
+    return n == p or (len(n) >= 20 and (n in p or p in n))
+
+
+# Utterances quieter than this that decode as an echo of the previous line
+# are silence hallucinations, not someone repeating themselves. Live speech
+# telemetry sits ~0.05+ RMS; line hiss / PLC warble sits well below — so an
+# intentional loud verbatim repeat still gets written, only quiet echoes drop.
+_ECHO_RMS_GATE = 0.03
+
+
+def is_silence_echo(text: str, prompt: str | None, rms: float) -> bool:
+    """Echo check gated on energy: quiet + repeats previous line ⇒ drop."""
+    return rms < _ECHO_RMS_GATE and _is_prompt_repeat(text, prompt)
+
+
+def _rms(audio: np.ndarray) -> float:
+    return float(np.sqrt(np.mean(audio * audio))) if audio.size else 0.0
+
+
 def _prompt_worthy(text: str) -> bool:
     """Whether decoded text is safe to chain as Whisper's next prompt.
 
@@ -101,11 +142,15 @@ class StreamingTranscriber:
         """Transcribe one mono float32 16 kHz utterance (0.5–10 s). Returns text.
 
         ``prompt`` (previous utterance) is passed as Whisper's initial prompt
-        for conversational continuity — names and terms carry over.
+        for conversational continuity — names and terms carry over. Returns
+        ``""`` for silence: low-confidence segments are dropped, and a decode
+        that merely echoes ``prompt`` (Whisper's stock silence hallucination)
+        is discarded instead of being written to the notes.
         """
         if audio_16k.size < 8000:  # < 0.5 s: nothing worth decoding
             return ""
-        if float(np.sqrt(np.mean(audio_16k**2))) < 0.005:  # near-silence
+        rms = _rms(audio_16k)
+        if rms < 0.005:  # near-silence
             return ""
         with self._lock:  # serialized: concurrent encodes contend and can fail
             segments, _info = self.model.transcribe(
@@ -116,5 +161,8 @@ class StreamingTranscriber:
                 condition_on_previous_text=False,
                 initial_prompt=prompt,
             )
-            texts = [s.text.strip() for s in segments]
-        return " ".join(texts).strip()
+            texts = [s.text.strip() for s in segments if s.text.strip()]
+        text = " ".join(texts).strip()
+        if text and is_silence_echo(text, prompt, rms):
+            return ""
+        return text

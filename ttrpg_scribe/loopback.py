@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from ttrpg_scribe.transcribe import _prompt_worthy
+from ttrpg_scribe.transcribe import _prompt_worthy, _rms, is_silence_echo
 
 if TYPE_CHECKING:
     from ttrpg_scribe.diarizer import SpeakerCluster
@@ -37,29 +37,39 @@ class VadChunker:
     Backstop: even audio the VAD never flags as speech is emitted at the
     ~10 s cap when it is clearly not silence (energy gate) — Whisper's own
     VAD decides whether it is transcribable. Without this, distorted or
-    noisy-but-loud speech vanishes without a trace.
+    noisy-but-loud speech vanishes without a trace. Windows with zero VAD-
+    voiced frames need a much louder gate: bare line/comfort noise over a
+    quiet call otherwise arrives as a 10 s "utterance" that Whisper
+    hallucinates into an echo of the previous line.
     """
 
     vad: Any  # webrtcvad ships no types
     max_samples: int
     min_energy: float
+    # Gate for windows the VAD never voiced at all (silence/comfort noise).
+    # Speech telemetry sits ~0.05+ RMS; this keeps loud-but-unvoiced audio
+    # (distorted speech) while dropping quiet-room hiss.
+    voiceless_min_energy: float
     _buf: bytearray
     _speech: bytearray
     _window: bytearray  # every fed sample since last emission (any voicing)
     _in_speech: bool
+    _voiced_in_window: bool
     _silence_frames: int
 
     def __init__(self, aggressiveness: int = 1, max_seconds: float = 10.0,
-                 min_energy: float = 0.008) -> None:
+                 min_energy: float = 0.008, voiceless_min_energy: float = 0.025) -> None:
         import webrtcvad
 
         self.vad = webrtcvad.Vad(aggressiveness)
         self.max_samples = int(max_seconds * SAMPLE_RATE)
         self.min_energy = min_energy
+        self.voiceless_min_energy = voiceless_min_energy
         self._buf = bytearray()
         self._speech = bytearray()
         self._window = bytearray()
         self._in_speech = False
+        self._voiced_in_window = False
         self._silence_frames = 0
 
     def _clear(self) -> None:
@@ -67,6 +77,7 @@ class VadChunker:
         self._speech = bytearray()
         self._window = bytearray()
         self._in_speech = False
+        self._voiced_in_window = False
         self._silence_frames = 0
 
     @staticmethod
@@ -85,6 +96,7 @@ class VadChunker:
             if voiced:
                 self._speech += frame
                 self._in_speech = True
+                self._voiced_in_window = True
                 self._silence_frames = 0
                 if len(self._speech) // 2 >= self.max_samples:  # force-split long monologues
                     out.append(self._to_float(self._speech))
@@ -99,9 +111,14 @@ class VadChunker:
                     self._clear()
         if len(self._window) // 2 >= self.max_samples:
             # Backstop: ~10 s of audio with no VAD emission. Emit it whole if
-            # it is clearly not silence; Whisper filters the rest.
+            # it is clearly not silence; Whisper filters the rest. A window
+            # the VAD never voiced at all must be LOUD to qualify — quiet
+            # line hiss over a silent call is not an utterance, and feeding
+            # it to Whisper with the previous line as prompt hallucinates an
+            # echo of that line into the notes.
+            gate = self.min_energy if self._voiced_in_window else self.voiceless_min_energy
             audio = self._to_float(self._window)
-            if audio.size >= SAMPLE_RATE // 2 and self._rms(audio) >= self.min_energy:
+            if audio.size >= SAMPLE_RATE // 2 and self._rms(audio) >= gate:
                 out.append(audio)
             self._clear()
         return out
@@ -116,10 +133,11 @@ class VadChunker:
         window when it is clearly not silence. Resets the segmenter."""
         voiced = self._to_float(bytearray(bytes(self._buf) + bytes(self._speech)))
         window = self._to_float(self._window)
+        gate = self.min_energy if self._voiced_in_window else self.voiceless_min_energy
         self._clear()
         if voiced.size >= int(min_seconds * SAMPLE_RATE):
             return voiced
-        if window.size >= SAMPLE_RATE // 2 and self._rms(window) >= self.min_energy:
+        if window.size >= SAMPLE_RATE // 2 and self._rms(window) >= gate:
             return window
         return None
 
@@ -162,6 +180,8 @@ def _emit_utterance(
     if label is None:
         label = cluster.identify(utterance)
     text = transcriber.transcribe(utterance, prompt=prompt)
+    if text and prompt and is_silence_echo(text, prompt, _rms(utterance)):
+        return ""  # quiet-period echo of the previous line, not new speech
     writer.write(label, text)
     return text
 
