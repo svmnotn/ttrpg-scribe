@@ -44,6 +44,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--channel", default=None,
                    help="Voice-bot mode: voice channel to join and record (name substring or id).")
     p.add_argument("--list-devices", action="store_true", help="List audio devices and exit.")
+    p.add_argument("--debug", action="store_true",
+                   help="Print extra debug/telemetry to console (always saved to <YYYY-MM-DD>-debug.log).")
     p.add_argument("--show-config", action="store_true", help="Show configured defaults and exit.")
     p.add_argument("--set-default", nargs=2, metavar=("KEY", "VALUE"),
                    help="Persist a default (KEY: mode|input|device|mic|model|guild|channel; empty VALUE clears) and exit.")
@@ -287,13 +289,15 @@ def main(argv: list[str] | None = None) -> None:
 
             run_sidecar(writer, transcriber,
                         guild=args.guild or mapped.get("guild") or settings.get("guild") or None,
-                        channel=args.channel or mapped.get("channel") or settings.get("channel") or None)
+                        channel=args.channel or mapped.get("channel") or settings.get("channel") or None,
+                        debug=args.debug)
         else:
             from ttrpg_scribe.bot import run_bot
 
             run_bot(writer, transcriber,
                     guild=args.guild or mapped.get("guild") or settings.get("guild") or None,
-                    channel=args.channel or mapped.get("channel") or settings.get("channel") or None)
+                    channel=args.channel or mapped.get("channel") or settings.get("channel") or None,
+                    debug=args.debug)
     except KeyboardInterrupt:
         print(f"\n[done] notes saved to {writer.path}", flush=True)
 
